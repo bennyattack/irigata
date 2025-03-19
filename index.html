@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arduino Control</title>
+    <script src="https://unpkg.com/react@17/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@17/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/babel-standalone@6/babel.min.js"></script>
+    <style>
+        body { font-family: Arial, sans-serif; background-color: #3E5F41; color: #EEE; margin: 0; padding: 0; }
+        .container { max-width: 900px; margin: auto; padding: 20px; }
+        .panels { display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; }
+        .card { background: #2C3E32; padding: 20px; border-radius: 10px; flex: 1; min-width: 300px; box-shadow: 0px 4px 6px rgba(0,0,0,0.3); color: white; }
+        .control-item { display: flex; justify-content: space-between; align-items: center; margin: 10px 0; }
+        button { background: #8BC34A; color: white; border: none; padding: 10px; cursor: pointer; border-radius: 5px; }
+        button:hover { background: #7CB342; }
+        select, label { display: block; margin: 10px 0; color: white; }
+        ul { list-style: none; padding: 0; }
+        li { background: #3D5A47; padding: 10px; margin: 5px 0; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    <script type="text/babel">
+        const API_BASE = "http://192.168.1.100"; 
+
+        function ArduinoControl() {
+            const [outputs, setOutputs] = React.useState(Array(8).fill(0));
+            const [schedule, setSchedule] = React.useState([]);
+            const [pin, setPin] = React.useState("0");
+            const [duration, setDuration] = React.useState("5");
+            const [frequency, setFrequency] = React.useState("1");
+
+            const pinLabels = ["Backyard 1", "Backyard 2", "Backyard 3", "Backyard 4", "Frontyard 1", "Frontyard 2", "Frontyard 3", "Frontyard 4"];
+
+            React.useEffect(() => {
+                fetchStatus();
+                const interval = setInterval(checkSchedule, 60000);
+                return () => clearInterval(interval);
+            }, [schedule]);
+
+            async function fetchStatus() {
+                try {
+                    const response = await fetch(`${API_BASE}/status`);
+                    const data = await response.json();
+                    setOutputs(data.outputs);
+                } catch (error) {
+                    console.error("Error fetching status:", error);
+                }
+            }
+
+            async function toggleOutput(index) {
+                const newState = outputs[index] ? 0 : 1;
+                try {
+                    await fetch(`${API_BASE}/set/${index}/${newState}`);
+                    setOutputs(prev => {
+                        const updated = [...prev];
+                        updated[index] = newState;
+                        return updated;
+                    });
+                } catch (error) {
+                    console.error("Error setting output:", error);
+                }
+            }
+
+            function addSchedule() {
+                const id = Date.now();
+                const newEntry = { id, pin, duration, frequency, nextRun: new Date() };
+                setSchedule([...schedule, newEntry]);
+            }
+
+            function deleteSchedule(id) {
+                setSchedule(schedule.filter(task => task.id !== id));
+            }
+
+            function editSchedule(id) {
+                const task = schedule.find(t => t.id === id);
+                if (task) {
+                    setPin(task.pin);
+                    setDuration(task.duration);
+                    setFrequency(task.frequency);
+                    deleteSchedule(id);
+                }
+            }
+
+            async function checkSchedule() {
+                const now = new Date();
+                for (const task of schedule) {
+                    if (now >= new Date(task.nextRun)) {
+                        await fetch(`${API_BASE}/set/${task.pin}/1`);
+                        setTimeout(() => fetch(`${API_BASE}/set/${task.pin}/0`), task.duration * 60000);
+                        task.nextRun.setDate(task.nextRun.getDate() + Number(task.frequency));
+                    }
+                }
+                setSchedule([...schedule]);
+            }
+
+            return (
+                <div className="container">
+                    <h1>Arduino Control Panel</h1>
+                    <div className="panels">
+                        <section className="card">
+                            <h2>Manual Control</h2>
+                            {outputs.map((state, index) => (
+                                <div key={index} className="control-item">
+                                    <span>{pinLabels[index]}</span>
+                                    <button onClick={() => toggleOutput(index)}>{state ? "ON" : "OFF"}</button>
+                                </div>
+                            ))}
+                        </section>
+                        <section className="card">
+                            <h2>Schedule Task</h2>
+                            <label>Pin</label>
+                            <select value={pin} onChange={(e) => setPin(e.target.value)}>
+                                {pinLabels.map((label, num) => <option key={num} value={num}>{label}</option>)}
+                            </select>
+                            <label>Duration (minutes)</label>
+                            <select value={duration} onChange={(e) => setDuration(e.target.value)}>
+                                {[...Array(12).keys()].map(i => <option key={i} value={(i + 1) * 5}>{(i + 1) * 5}</option>)}
+                            </select>
+                            <label>Frequency (days)</label>
+                            <select value={frequency} onChange={(e) => setFrequency(e.target.value)}>
+                                {[...Array(7).keys()].map(i => <option key={i} value={i + 1}>{i + 1}</option>)}
+                            </select>
+                            <button onClick={addSchedule}>Schedule</button>
+                            <h3>Scheduled Tasks</h3>
+                            <ul>
+                                {schedule.map(task => (
+                                    <li key={task.id}>
+                                        {pinLabels[task.pin]} for {task.duration} min, every {task.frequency} day(s)
+                                        <button onClick={() => editSchedule(task.id)}>Edit</button>
+                                        <button onClick={() => deleteSchedule(task.id)}>Delete</button>
+                                    </li>
+                                ))}
+                            </ul>
+                        </section>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<ArduinoControl />, document.getElementById("root"));
+    </script>
+</body>
+</html>
