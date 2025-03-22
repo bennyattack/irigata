@@ -7,12 +7,12 @@ IPAddress ip(192, 168, 1, 81);
 EthernetServer server(80);
 
 // Define pin mappings
-const int outputPins[] = {13, 3, 4, 5, 6, 7, 8, 9}; // 8 digital output pins
+const int outputPins[] = {2, 3, 4, 5, 6, 7, 8, 9}; // 8 digital output pins
 
 void setup() {
     Ethernet.begin(mac, ip);
     server.begin();
-    Serial.begin(9600);
+    Serial.begin(115200);
     
     // Set output pins to OUTPUT mode
     for (int i = 0; i < 8; i++) {
@@ -36,7 +36,7 @@ void loop() {
         if (request.indexOf("GET /status") >= 0) {
             sendStatus(client);
         } else if (request.indexOf("GET /set/") >= 0) {
-            handleSetCommand(request);            
+            handleSetCommand(client, request);            
         }
         
         client.stop();
@@ -46,6 +46,7 @@ void loop() {
 void sendStatus(EthernetClient client) {
     client.println("HTTP/1.1 200 OK");
     client.println("Content-Type: application/json");
+    client.println("Access-Control-Allow-Origin: *"); // This line enables CORS
     client.println("Connection: close");
     client.println();
     
@@ -57,14 +58,33 @@ void sendStatus(EthernetClient client) {
     client.println("]}");
 }
 
-void handleSetCommand(String request) {
-    int pinIndex = request.substring(9, 10).toInt(); // Extract pin number from URL
+void handleSetCommand(EthernetClient client, String request) {
+    client.println("HTTP/1.1 200 OK");
+    client.println("Content-Type: application/json");
+    client.println("Access-Control-Allow-Origin: *"); // This line enables CORS
+    client.println("Connection: close");
+    client.println();
+    
+    int channel = request.substring(9, 10).toInt(); // Extract pin number from URL
     int state = request.substring(11, 12).toInt(); // Extract state from URL
-    Serial.print("Operating pin ");
-    Serial.print(outputPins[pinIndex]);
-    Serial.print(". State = ");
-    Serial.println(state);
-    if (pinIndex >= 0 && pinIndex < 8 && (state == 0 || state == 1)) {
-        digitalWrite(outputPins[pinIndex], state);
+    if(operate(channel, state) == -1){
+      Serial.println("!!! FAILED TO OPERATE !!! ");
     }
+}
+
+int operate(int channel, int state) {
+    if (channel >= 0 && channel < 8 && (state == 0 || state == 1)) {
+        digitalWrite(outputPins[channel], state);   
+        Serial.print("Changing channel ");
+        Serial.print(channel);
+        Serial.print(" (pin ");
+        Serial.print(outputPins[channel]);
+        Serial.print(") to ");
+        Serial.println(state);
+        return 0;
+    }
+    else {
+        return -1;
+    }
+
 }
